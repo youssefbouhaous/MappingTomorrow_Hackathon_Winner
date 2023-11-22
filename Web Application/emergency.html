@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Display ArcGIS Web Map with Moving Cars</title>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css">
+    <script src="https://js.arcgis.com/4.23/"></script>
+    <style>
+        #viewDiv {
+            height: 600px;
+            width: 80%;
+            margin: 0 auto;
+            padding: 0;
+        }
+
+        #navbar a {
+        display: inline-block;
+        padding: 14px 16px;
+        text-decoration: none;
+        color: #f2f2f2;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+    }
+
+        #navbar a:hover {
+            background-color: #555;
+            color: white;
+        }
+
+        /* Button styles */
+        .styled-button {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #fff;
+            background: linear-gradient(to right, #4CAF50, #45a049); /* Gradient background */
+            border: none;
+            transition: background 0.3s;
+        }
+
+        .styled-button:hover {
+            background: linear-gradient(to right, #45a049, #4CAF50); /* Adjust gradient on hover */
+        }
+
+        /* Optional: Add animation to the button */
+        @keyframes scaleIn {
+            from {
+                transform: scale(0.8);
+            }
+
+            to {
+                transform: scale(1);
+            }
+        }
+
+        .styled-button {
+            animation: scaleIn 0.3s ease;
+        }
+
+        /* Additional styles for your map container */
+        #viewDiv {
+            height: 600px;
+            width: 80%;
+            margin: 60px auto 0 auto;
+            padding: 0;
+        }
+    </style>
+</head>
+
+<body style="background-color: rgb(33, 33, 33);">
+    <div id="navbar" >
+        <center>
+        <a href="index.html">Home</a>
+        <a href="emergency.html">Emergency</a>
+        <a href="mycar.html">My car</a>
+        <a href="all_cars.html">All cars</a>
+        </center>
+    </div>
+    <div id="viewDiv"></div>
+    <script>
+        require([
+            "esri/views/MapView",
+            "esri/WebMap",
+            "esri/Graphic",
+            "esri/geometry/Point",
+            "esri/symbols/PictureMarkerSymbol",
+            "esri/layers/GraphicsLayer",
+            "esri/tasks/RouteTask",
+            "esri/tasks/support/RouteParameters",
+            "esri/tasks/support/FeatureSet",
+        ], function (MapView, WebMap, Graphic, Point, PictureMarkerSymbol, GraphicsLayer, RouteTask, RouteParameters, FeatureSet) {
+
+            const view = new MapView({
+                container: "viewDiv",
+                map: new WebMap({
+                    portalItem: {
+                        id: "c4fb7d9578874fa09adec56e866ebab5"
+                    }
+                })
+            });
+
+            const pointsLayer = new GraphicsLayer();
+            view.map.add(pointsLayer);
+
+            const carSymbol = new PictureMarkerSymbol({
+                url: "car.png",
+                width: "32px",
+                height: "32px"
+            });
+
+            const policeCars = [];
+            const policeCarsLayer = new GraphicsLayer();
+            view.map.add(policeCarsLayer);
+
+            const csvPointsLayer = new GraphicsLayer();
+            view.map.add(csvPointsLayer);
+
+            const routeLayer = new GraphicsLayer();
+            view.map.add(routeLayer);
+
+            const pointSymbol = new PictureMarkerSymbol({
+                url: "emer.png",
+                width: "32px",
+                height: "32px"
+            });
+
+            const emergencyPointGraphic = new Graphic({
+                geometry: new Point({
+                    longitude: -87.75,
+                    latitude: 41.9
+                }),
+                symbol: pointSymbol
+            });
+            csvPointsLayer.add(emergencyPointGraphic);
+
+            function createPoliceCars() {
+                const initialPoliceLocations = [
+                    [-87.70, 41.88],
+                    // Add more initial locations as needed
+                ];
+
+                initialPoliceLocations.forEach(location => {
+                    const policeCarGraphic = new Graphic({
+                        geometry: new Point({
+                            longitude: location[0],
+                            latitude: location[1]
+                        }),
+                        symbol: carSymbol.clone()
+                    });
+
+                    policeCars.push({
+                        graphic: policeCarGraphic,
+                        route: null,
+                        routeStep: 0
+                    });
+                });
+
+                policeCarsLayer.addMany(policeCars.map(car => car.graphic));
+            }
+
+            async function movePoliceCars() {
+                for (let i = 0; i < policeCars.length; i++) {
+                    const policeCar = policeCars[i];
+
+                    if (policeCar.route) {
+                        const route = policeCar.route;
+                        const routeStep = policeCar.routeStep;
+
+                        const path = route.geometry.paths[0];
+                        if (path && routeStep < path.length) {
+                            const nextLocation = {
+                                longitude: path[routeStep][0],
+                                latitude: path[routeStep][1]
+                            };
+
+                            policeCar.graphic.geometry = new Point(nextLocation);
+                            policeCar.routeStep++;
+
+                            if (policeCar.routeStep >= path.length) {
+                                policeCar.route = null;
+                                policeCar.routeStep = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            async function fetchData() {
+                try {
+                    setInterval(async () => {
+                        const csvURL = "https://crimefighters.maps.arcgis.com/sharing/rest/content/items/1c155c837971464cbdb6107f98ad4d82/data";
+                        const csvResponse = await fetch(csvURL);
+                        const csvData = await csvResponse.text();
+                        const dataArray = parseCSV(csvData);
+
+                        console.log("Parsed data:", dataArray);
+
+                        updatePoints(dataArray);
+                        updateEmergencyPoint(dataArray);
+
+                        for (let i = 0; i < policeCars.length; i++) {
+                            const policeCar = policeCars[i];
+                            const startLocations = [policeCar.graphic.geometry];
+                            policeCar.route = await findOptimalRoute(startLocations, emergencyPointGraphic.geometry);
+                            policeCar.routeStep = 0;
+                            displayOptimalRoute(policeCar.route);  // Display the route for each police car
+                        }
+                    }, 5000);
+                } catch (error) {
+                    console.error("Error fetching data:", error);
+                }
+            }
+
+            function updateEmergencyPoint(dataArray) {
+                if (dataArray.length > 0) {
+                    const newEmergencyPoint = dataArray[0];
+                    emergencyPointGraphic.geometry = new Point({
+                        longitude: parseFloat(newEmergencyPoint.x),
+                        latitude: parseFloat(newEmergencyPoint.y)
+                    });
+                }
+            }
+
+            function updatePoints(dataArray) {
+                pointsLayer.removeAll();
+
+                const pointGraphics = dataArray.map(point => {
+                    return new Graphic({
+                        geometry: new Point({
+                            longitude: parseFloat(point.x),
+                            latitude: parseFloat(point.y)
+                        }),
+                        symbol: pointSymbol
+                    });
+                });
+
+                pointsLayer.addMany(pointGraphics);
+            }
+
+            function parseCSV(csvData) {
+                const rows = csvData.split('\n');
+                const dataArray = [];
+                const headers = rows[0].split(',');
+
+                for (let i = 1; i < rows.length; i++) {
+                    const columns = rows[i].split(',');
+
+                    if (columns && columns.length === headers.length) {
+                        const dataObject = {};
+
+                        for (let j = 0; j < headers.length; j++) {
+                            dataObject[headers[j].trim()] = columns[j].trim();
+                        }
+                        dataArray.push(dataObject);
+                    } else {
+                        console.warn(`Skipping row ${i + 1} due to missing or mismatched columns.`);
+                    }
+                }
+
+                return dataArray;
+            }
+
+            function findOptimalRoute(startLocations, endLocation) {
+                const routeTask = new RouteTask({
+                    url: "https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World"
+                });
+
+                const routeParams = new RouteParameters({
+                    stops: new FeatureSet({
+                        features: [
+                            ...startLocations.map((location, index) => new Graphic({
+                                geometry: location,
+                                attributes: {
+                                    Name: `Stop ${index + 1}`
+                                }
+                            })),
+                            new Graphic({
+                                geometry: endLocation,
+                                attributes: {
+                                    Name: "Emergency Point"
+                                }
+                            })
+                        ]
+                    }),
+                    returnDirections: true
+                });
+
+                return routeTask.solve(routeParams)
+                    .then(routeResult => routeResult.routeResults[0].route)
+                    .catch(error => console.error("Error finding optimal route:", error));
+            }
+
+            function displayOptimalRoute(route) {
+                // Clear existing graphics from the route layer
+                routeLayer.removeAll();
+
+                // Create a graphic for the route
+                const routeGraphic = new Graphic({
+                    geometry: route.geometry,
+                    symbol: {
+                        type: "simple-line",
+                        color: [255, 0, 0],  // Red color
+                        width: 5
+                    }
+                });
+
+                routeLayer.add(routeGraphic);
+            }
+
+            createPoliceCars();
+            setInterval(movePoliceCars, 100);
+
+            // Start fetching data and updating the map
+            fetchData();
+        });
+    </script>
+</body>
+
+</html>

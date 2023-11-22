@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Display Optimal Path for Police Cars</title>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css">
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://js.arcgis.com/4.23/"></script>
+    <script src="distAlgo.js"></script>
+    <style>
+        #viewDiv {
+            height: 600px;
+            width: 80%;
+            margin: 0 auto;
+            padding: 0;
+        }
+        #navbar a {
+        display: inline-block;
+        padding: 14px 16px;
+        text-decoration: none;
+        color: #f2f2f2;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+    }
+
+        #navbar a:hover {
+            background-color: #555;
+            color: white;
+        }
+         /* Optional: Add animation to the button */
+         @keyframes scaleIn {
+            from {
+                transform: scale(0.8);
+            }
+
+            to {
+                transform: scale(1);
+            }
+        }
+
+    </style>
+</head>
+
+<body style="background-color:#555;">
+    <div id="navbar" >
+        <center>
+            <a href="index.html">Home</a>
+            <a href="all_cars.html">Home</a>
+            <a href="emergency.html">Emergency</a>
+            <a href="points.html">Predicted Points</a>
+        </center>
+    </div>
+    <div id="viewDiv"></div>
+    
+
+    <script>
+        // Public link to the JSON file
+        const publicLink = 'https://crimefighters.maps.arcgis.com/sharing/rest/content/items/984af0647d4e4b77b2b3fdff5d809a12/data';
+
+        async function downloadJsonFile() {
+            try {
+                const response = await fetch(publicLink);
+                const data = await response.json();
+
+                // Convert JSON data to a Blob
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+
+                // Create a download link
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(blob);
+                downloadLink.download = 'downloaded_file.json';
+
+                // Append the link to the document and trigger the click event
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+
+                // Clean up
+                document.body.removeChild(downloadLink);
+            } catch (error) {
+                console.error('Error downloading file:', error.message);
+            }
+        }
+
+        // Attach click event to the button
+        const downloadButton = document.getElementById('downloadButton');
+        downloadButton.addEventListener('click', downloadJsonFile);
+    </script>
+    <script>
+        require([
+            "esri/views/MapView",
+            "esri/WebMap",
+            "esri/Graphic",
+            "esri/geometry/Point",
+            "esri/tasks/RouteTask",
+            "esri/tasks/support/RouteParameters",
+            "esri/tasks/support/FeatureSet",
+            "esri/layers/GraphicsLayer",
+            "esri/symbols/PictureMarkerSymbol"
+        ], function (MapView, WebMap, Graphic, Point, RouteTask, RouteParameters, FeatureSet, GraphicsLayer, PictureMarkerSymbol) {
+
+            // API Key for authentication (replace with your actual API key)
+            const apiKey = "AAPK964718c10bfe495c87e95303854042a7g99oSBztlpI4oJg41xoX8k4ojCjzTAIcLYyNFriJESYIiPIsl3_wnmQbmJPJwEej";
+
+            // Array of coordinates
+            let a = [];
+
+            // Function to fetch the array from a public link
+            async function fetchArrayFromLink(link) {
+                try {
+                    const response = await fetch(link);
+                    const data = await response.json();
+                    return data.features[0].geometry.coordinates;
+                } catch (error) {
+                    console.error('Error fetching array data:', error);
+                    return null;
+                }
+            }
+
+            // Execute the fetchArrayFromLink function and set the array "a"
+            fetchArrayFromLink(publicLink).then(data => {
+                if (data && data.length > 0) {
+                    a = data;
+
+                    // Create a view instance to display the web map
+                    const view = new MapView({
+                        container: "viewDiv",
+                        map: new WebMap({
+                            portalItem: {
+                                id: "c4fb7d9578874fa09adec56e866ebab5" // Replace with your web map ID
+                            }
+                        })
+                    });
+
+                    // Create a graphics layer for the route
+                    const routeLayer = new GraphicsLayer();
+                    view.map.add(routeLayer);
+
+                    // Create a graphics layer for the police cars
+                    const policeCarsLayer = new GraphicsLayer();
+                    view.map.add(policeCarsLayer);
+
+                    // Symbol for the police car
+                    const carIconUrl = "car.png";
+                    const carSymbol = new PictureMarkerSymbol({
+                        url: carIconUrl,
+                        width: "32px",
+                        height: "32px"
+                    });
+
+                    // Function to create a route between multiple points
+                    function createOptimalPath(points, color) {
+    // Convert array of arrays to an array of Point geometries
+    const pointGeometries = points.map(point => new Point({ x: point[0], y: point[1] }));
+
+    console.log('Points:', pointGeometries); // Log the points to the console
+
+    // Define the route task
+    const routeTask = new RouteTask({
+        url: "https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World",
+        apiKey: apiKey // Include the API key for authentication
+    });
+
+    // Create route parameters
+    const routeParams = new RouteParameters({
+        stops: new FeatureSet({
+            features: pointGeometries.map(geometry => new Graphic({ geometry: geometry }))
+        }),
+        outSpatialReference: view.spatialReference
+    });
+
+    // Solve the route
+    routeTask.solve(routeParams).then(function (data) {
+        const route = data.routeResults[0].route;
+
+        // Create a graphic for the route
+        const routeGraphic = new Graphic({
+            geometry: route.geometry,
+            symbol: {
+                type: "simple-line",
+                color: color,
+                width: 3
+            }
+        });
+
+        // Add the route graphic to the layer
+        routeLayer.add(routeGraphic);
+
+        // Move police cars along the route
+        movePoliceCarsAlongRoute(route, color);
+    }).catch(function (error) {
+        console.error("Error solving route:", error);
+    });
+}
+
+
+
+                    // Function to move police cars along the route
+                    function movePoliceCarsAlongRoute(route, color) {
+                        // Create police car graphics
+                        const initialPoliceLocations = route.geometry.paths[0].map(point => ({
+                            longitude: point[0],
+                            latitude: point[1]
+                        }));
+
+                        const policeCars = initialPoliceLocations.map(location => {
+                            const policeCarGraphic = new Graphic({
+                                geometry: new Point({
+                                    longitude: location.longitude,
+                                    latitude: location.latitude
+                                }),
+                                symbol: carSymbol.clone() // Use clone to avoid sharing the same symbol object
+                            });
+
+                            return {
+                                graphic: policeCarGraphic,
+                                route: route.clone(),
+                                routeStep: 0
+                            };
+                        });
+
+                        policeCars.forEach(policeCar => {
+                            policeCarsLayer.add(policeCar.graphic);
+                        });
+                        let r=0;
+                        // Move police cars along the route
+                        function moveCars() {
+                            policeCars.forEach(policeCar => {
+                                const path = policeCar.route.geometry.paths[0];
+
+                                if (r/1000 < path.length) {
+                                    const nextLocation = {
+                                        longitude: path[Math.floor(r/1000)][0],
+                                        latitude: path[Math.floor(r/1000)][1]
+                                    };
+
+                                    policeCar.graphic.geometry = new Point(nextLocation);
+
+                                    // Increment the route step
+                                    r++;
+                                } else {
+                                    // Reset the route if the car reaches the end
+                                    policeCar.routeStep = 0;
+                                }
+                            });
+
+                            requestAnimationFrame(moveCars); // Move the police cars in the next animation frame
+                        }
+
+                        moveCars();
+                    }
+
+                        // Define the number of clusters (2 in this case)
+                        
+
+                        const k = 4; // Number of clusters
+
+                        const clusters = kmeans(a, k, distances.euclidean, 10, function(snapshot) {
+                            // This callback function will be called every 10 iterations (adjust as needed)
+                            console.log('Snapshot of clusters:', snapshot);
+                        });
+
+                        console.log('Final clusters:', clusters[0]);
+                    // Create points for the first car
+                    const splitIndex = Math.floor(a.length / 2);
+                    const listPointsCar1 = a.slice(0, splitIndex).map(point => new Point({ longitude: point[0], latitude: point[1] }));
+
+                    // Create points for the second car
+                    const listPointsCar2 = a.slice(splitIndex).map(point => new Point({ longitude: point[0], latitude: point[1] }));
+
+                    // Create optimal paths for both cars
+                    createOptimalPath(clusters[0], [0, 0, 255]);
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

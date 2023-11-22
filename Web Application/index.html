@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>CrimeFighters Home Page</title>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #header {
+            text-align: center;
+            padding: 20px;
+            background-color: #333;
+            color: white;
+        }
+
+        #mapControls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        #logo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+        }
+
+        #policeSymbol {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            z-index: 1001; /* Place it above other elements */
+            animation: rotateAnimation 2s infinite; /* Add animation */
+        }
+
+        #viewDiv {
+            height: calc(80vh - 60px); /* Adjusted height to fit the logo and header */
+            margin: 0;
+        }
+
+        
+        .footer {
+            background-color: #333; /* Set the background color for the footer */
+            color: #fff; /* Set the text color in the footer */
+            padding: 2px; /* Add some padding to the footer */
+            text-align: center; /* Center-align text in the footer */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="logo">
+        <img src="city.png" alt="CrimeFighters Logo" width="150" height="150">
+    </div>
+    <div id="header">
+        <h1>CrimeFighters Project</h1>
+        <p>Intelligent City Patrol Management</p>
+    </div>
+    <div id="mapControls">
+        <!-- Add more sophisticated map controls if needed -->
+        <!-- For example, a legend, layer toggle, etc. -->
+    </div>
+    <div id="policeSymbol" onclick="goTo1Html()">
+        <img src="home.png" alt="Police Symbol" width="400" height="400">
+    </div>
+    <div id="viewDiv"></div>
+    <div class="footer">
+        <p>&copy; CrimeFighters</p>
+    </div>
+    <script src="https://js.arcgis.com/4.23/"></script>
+    <script>
+        function goTo1Html() {
+            window.location.href = "all_cars.html";
+        }
+
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic",
+            "esri/symbols/PictureMarkerSymbol"
+        ], function (Map, MapView, GraphicsLayer, Graphic, PictureMarkerSymbol) {
+            // Create a map
+            const map = new Map({
+                basemap: "streets-navigation-vector"
+            });
+
+            // Create a view
+            const view = new MapView({
+                container: "viewDiv",
+                map: map,
+                center: [-87.70, 41.88],
+                zoom: 12
+            });
+
+            // Create a graphics layer for police symbols
+            const policeLayer = new GraphicsLayer();
+            map.add(policeLayer);
+
+            // Create a police symbol
+            const policeSymbol = new PictureMarkerSymbol({
+                url: "symbole-.png", // Replace with the path to your police car symbol image
+                width: "32px",
+                height: "32px"
+            });
+
+            // Add police symbols to the map
+            const policeLocations = [
+                [-87.70, 41.88],
+                [-87.72, 41.90],
+                // Add more police locations as needed
+            ];
+
+            policeLocations.forEach(location => {
+                const policeGraphic = new Graphic({
+                    geometry: {
+                        type: "point",
+                        longitude: location[0],
+                        latitude: location[1]
+                    },
+                    symbol: policeSymbol
+                });
+
+                policeLayer.add(policeGraphic);
+            });
+        });
+    </script>
+</body>
+
+</html>
